@@ -1,8 +1,8 @@
 """
 Tests for `telethon.extensions.html`.
 """
-from telethon.extensions import html
-from telethon.tl.types import MessageEntityBold, MessageEntityItalic, MessageEntityTextUrl
+from legacytl.extensions import html
+from legacytl.tl.types import MessageEntityBold, MessageEntityItalic, MessageEntityTextUrl
 
 
 def test_entity_edges():

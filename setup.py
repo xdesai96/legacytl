@@ -46,8 +46,8 @@ class TempWorkDir:
 
 API_REF_URL = 'https://tl.telethon.dev/'
 
-GENERATOR_DIR = Path('telethon_generator')
-LIBRARY_DIR = Path('telethon')
+GENERATOR_DIR = Path('tlhlegacy_generator')
+LIBRARY_DIR = Path('tlhlegacy')
 
 ERRORS_IN = GENERATOR_DIR / 'data/errors.csv'
 ERRORS_OUT = LIBRARY_DIR / 'errors/rpcerrorlist.py'
@@ -66,10 +66,10 @@ DOCS_OUT = Path('docs')
 
 
 def generate(which, action='gen'):
-    from telethon_generator.parsers import\
+    from legacytl_generator.parsers import\
         parse_errors, parse_methods, parse_tl, find_layer
 
-    from telethon_generator.generators import\
+    from legacytl_generator.generators import\
         generate_errors, generate_tlobjects, generate_docs, clean_tlobjects
 
     layer = next(filter(None, map(find_layer, TLOBJECT_IN_TLS)))
@@ -166,7 +166,7 @@ def main(argv):
                 print('Failed to check that the API reference is up to date:', API_REF_URL)
                 return
 
-            from telethon_generator.parsers import find_layer
+            from legacytl_generator.parsers import find_layer
             layer = next(filter(None, map(find_layer, TLOBJECT_IN_TLS)))
             published_layer = int(m[1])
             if published_layer != layer:
@@ -179,7 +179,7 @@ def main(argv):
 
         # Try importing the telethon module to assert it has no errors
         try:
-            import telethon
+            import legacytl
         except Exception as e:
             print('Packaging for PyPi aborted, importing the module failed.')
             print(e)
@@ -208,27 +208,27 @@ def main(argv):
         with open('README.rst', 'r', encoding='utf-8') as f:
             long_description = f.read()
 
-        with open('telethon/version.py', 'r', encoding='utf-8') as f:
+        with open('legacytl/version.py', 'r', encoding='utf-8') as f:
             version = re.search(r"^__version__\s*=\s*'(.*)'.*$",
                                 f.read(), flags=re.MULTILINE).group(1)
         setup(
-            name='Telethon',
+            name='Legacy-TL-New',
             version=version,
             description="Full-featured Telegram client library for Python 3",
             long_description=long_description,
 
-            url='https://github.com/LonamiWebs/Telethon',
-            download_url='https://github.com/LonamiWebs/Telethon/releases',
+            url='https://github.com/xdesai96/tlh-legacy',
+            download_url='https://github.com/xdesai96/tlh-legacy/releases',
 
-            author='Lonami Exo',
-            author_email='totufals@hotmail.com',
+            author='xdesai96',
+            author_email='xdesai@proton.me',
 
             license='MIT',
 
             # See https://stackoverflow.com/a/40300957/4759433
             # -> https://www.python.org/dev/peps/pep-0345/#requires-python
             # -> http://setuptools.readthedocs.io/en/latest/setuptools.html
-            python_requires='>=3.5',
+            python_requires='>=3.8',
 
             # See https://pypi.python.org/pypi?%3Aaction=list_classifiers
             classifiers=[
@@ -250,7 +250,7 @@ def main(argv):
             ],
             keywords='telegram api chat client library messaging mtproto',
             packages=find_packages(exclude=[
-                'telethon_*', 'tests*'
+                'legacytl_*', 'tests*'
             ]),
             install_requires=['pyaes', 'rsa'],
             extras_require={

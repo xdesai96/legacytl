@@ -3,7 +3,7 @@ Tests for `telethon.crypto.rsa`.
 """
 import pytest
 
-from telethon.crypto import rsa
+from legacytl.crypto import rsa
 
 
 @pytest.fixture

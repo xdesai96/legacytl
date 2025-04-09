@@ -1,6 +1,6 @@
 import pytest
 
-from telethon import TelegramClient, events, types, utils
+from legacytl import TelegramClient, events, types, utils
 
 
 def get_client():

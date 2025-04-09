@@ -4,9 +4,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from telethon import TelegramClient
-from telethon.client import MessageMethods
-from telethon.tl.types import PeerChat, MessageMediaDocument, Message, MessageEntityBold
+from legacytl import TelegramClient
+from legacytl.client import MessageMethods
+from legacytl.tl.types import PeerChat, MessageMediaDocument, Message, MessageEntityBold
 
 
 @pytest.mark.asyncio

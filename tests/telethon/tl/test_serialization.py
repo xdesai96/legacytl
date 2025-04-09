@@ -1,6 +1,6 @@
 import pytest
 
-from telethon.tl import types, functions
+from legacytl.tl import types, functions
 
 
 def test_nested_invalid_serialization():
