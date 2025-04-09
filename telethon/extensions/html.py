@@ -1,20 +1,34 @@
 """
 Simple HTML -> Telegram entity parser.
 """
+import re
+import struct
 from collections import deque
 from html import escape
 from html.parser import HTMLParser
-from typing import Iterable, Tuple, List
+from typing import Optional, Tuple, List, Generator, List, Optional, cast
+from abc import ABC, abstractmethod
 
-from ..helpers import add_surrogate, del_surrogate, within_surrogate, strip_text
-from ..tl import TLObject
+from .. import helpers
 from ..tl.types import (
     MessageEntityBold, MessageEntityItalic, MessageEntityCode,
     MessageEntityPre, MessageEntityEmail, MessageEntityUrl,
     MessageEntityTextUrl, MessageEntityMentionName,
     MessageEntityUnderline, MessageEntityStrike, MessageEntityBlockquote,
-    TypeMessageEntity
+    TypeMessageEntity, MessageEntityCustomEmoji, MessageEntitySpoiler
 )
+
+
+# Helpers from markdown.py
+def _add_surrogate(text):
+    return ''.join(
+        ''.join(chr(y) for y in struct.unpack('<HH', x.encode('utf-16le')))
+        if (0x10000 <= ord(x) <= 0x10FFFF) else x for x in text
+    )
+
+
+def _del_surrogate(text):
+    return text.encode('utf-16', 'surrogatepass').decode('utf-16')
 
 
 class HTMLToTelegramParser(HTMLParser):
@@ -33,13 +47,15 @@ class HTMLToTelegramParser(HTMLParser):
         attrs = dict(attrs)
         EntityType = None
         args = {}
-        if tag == 'strong' or tag == 'b':
+        if tag in ["strong", "b"]:
             EntityType = MessageEntityBold
-        elif tag == 'em' or tag == 'i':
+        elif tag in ["em", "i"]:
             EntityType = MessageEntityItalic
+        elif tag in ["tg-spoiler"]:
+            EntityType = MessageEntitySpoiler
         elif tag == 'u':
             EntityType = MessageEntityUnderline
-        elif tag == 'del' or tag == 's':
+        elif tag in ["del", "s"]:
             EntityType = MessageEntityStrike
         elif tag == 'blockquote':
             EntityType = MessageEntityBlockquote
@@ -60,7 +76,7 @@ class HTMLToTelegramParser(HTMLParser):
                 EntityType = MessageEntityCode
         elif tag == 'pre':
             EntityType = MessageEntityPre
-            args['language'] = ''
+            args["language"] = ''
         elif tag == 'a':
             try:
                 url = attrs['href']
@@ -74,10 +90,13 @@ class HTMLToTelegramParser(HTMLParser):
                     EntityType = MessageEntityUrl
                 else:
                     EntityType = MessageEntityTextUrl
-                    args['url'] = del_surrogate(url)
+                    args['url'] = _del_surrogate(url)
                     url = None
             self._open_tags_meta.popleft()
             self._open_tags_meta.appendleft(url)
+        elif tag == "emoji" and CUSTOM_EMOJIS:
+            EntityType = MessageEntityCustomEmoji
+            args["document_id"] = int(attrs["document_id"])
 
         if EntityType and tag not in self._building_entities:
             self._building_entities[tag] = EntityType(
@@ -121,74 +140,197 @@ def parse(html: str) -> Tuple[str, List[TypeMessageEntity]]:
         return html, []
 
     parser = HTMLToTelegramParser()
-    parser.feed(add_surrogate(html))
-    text = strip_text(parser.text, parser.entities)
-    parser.entities.reverse()
-    parser.entities.sort(key=lambda entity: entity.offset)
-    return del_surrogate(text), parser.entities
+    parser.feed(_add_surrogate(html))
+    text = helpers.strip_text(parser.text, parser.entities)
+    return _del_surrogate(text), parser.entities
 
 
-ENTITY_TO_FORMATTER = {
-    MessageEntityBold: ('<strong>', '</strong>'),
-    MessageEntityItalic: ('<em>', '</em>'),
-    MessageEntityCode: ('<code>', '</code>'),
-    MessageEntityUnderline: ('<u>', '</u>'),
-    MessageEntityStrike: ('<del>', '</del>'),
-    MessageEntityBlockquote: ('<blockquote>', '</blockquote>'),
-    MessageEntityPre: lambda e, _: (
-        "<pre>\n"
-        "    <code class='language-{}'>\n"
-        "        ".format(e.language), "{}\n"
-        "    </code>\n"
-        "</pre>"
-    ),
-    MessageEntityEmail: lambda _, t: ('<a href="mailto:{}">'.format(t), '</a>'),
-    MessageEntityUrl: lambda _, t: ('<a href="{}">'.format(t), '</a>'),
-    MessageEntityTextUrl: lambda e, _: ('<a href="{}">'.format(escape(e.url)), '</a>'),
-    MessageEntityMentionName: lambda e, _: ('<a href="tg://user?id={}">'.format(e.user_id), '</a>'),
-}
+CUSTOM_EMOJIS = True  # Can be disabled externally
+
+# Based on https://github.com/aiogram/aiogram/blob/c43ff9b6f9dd62cd2d84272e5c460b904b4c3276/aiogram/utils/text_decorations.py
 
 
-def unparse(text: str, entities: Iterable[TypeMessageEntity]) -> str:
-    """
-    Performs the reverse operation to .parse(), effectively returning HTML
-    given a normal text and its MessageEntity's.
+class TextDecoration(ABC):
+    def apply_entity(self, entity, text: str) -> str:
+        """
+        Apply single entity to text
+        :param entity:
+        :param text:
+        :return:
+        """
+        entity_map = {
+            MessageEntityBold: "bold",
+            MessageEntityItalic: "italic",
+            MessageEntitySpoiler: "spoiler",
+            MessageEntityCode: "code",
+            MessageEntityUnderline: "underline",
+            MessageEntityStrike: "strikethrough",
+            MessageEntityBlockquote: "blockquote",
+        }
+        if type(entity) in entity_map:
+            if re.match(r"^<emoji document_id=\"?\d+?\"?>[^<]*?<\/emoji>$", text):
+                return text
 
-    :param text: the text to be reconverted into HTML.
-    :param entities: the MessageEntity's applied to the text.
-    :return: a HTML representation of the combination of both inputs.
-    """
-    if not text:
-        return text
-    elif not entities:
-        return escape(text)
+            return cast(str, getattr(self, entity_map[type(entity)])(value=text))
+        if type(entity) == MessageEntityPre:
+            return (
+                self.pre_language(value=text, language=entity.language)
+                if entity.language
+                else self.pre(value=text)
+            )
+        if type(entity) == MessageEntityMentionName:
+            return self.link(value=text, link=f"tg://user?id={entity.user_id}")
+        if type(entity) == MessageEntityTextUrl:
+            return self.link(value=text, link=cast(str, entity.url))
+        if type(entity) == MessageEntityUrl:
+            return self.link(value=text, link=text)
+        if type(entity) == MessageEntityEmail:
+            return self.link(value=text, link=f"mailto:{text}")
+        if type(entity) == MessageEntityCustomEmoji and CUSTOM_EMOJIS:
+            return self.custom_emoji(value=text, document_id=entity.document_id)
 
-    if isinstance(entities, TLObject):
-        entities = (entities,)
+        return self.quote(text)
 
-    text = add_surrogate(text)
-    insert_at = []
-    for i, entity in enumerate(entities):
-        s = entity.offset
-        e = entity.offset + entity.length
-        delimiter = ENTITY_TO_FORMATTER.get(type(entity), None)
-        if delimiter:
-            if callable(delimiter):
-                delimiter = delimiter(entity, text[s:e])
-            insert_at.append((s, i, delimiter[0]))
-            insert_at.append((e, -i, delimiter[1]))
+    def unparse(self, text: str, entities: Optional[list] = None) -> str:
+        """
+        Unparse message entities
+        :param text: raw text
+        :param entities: Array of MessageEntities
+        :return:
+        """
+        return "".join(
+            self._unparse_entities(
+                self._add_surrogates(text),
+                sorted(entities, key=lambda item: item.offset) if entities else [],
+            )
+        )
 
-    insert_at.sort(key=lambda t: (t[0], t[1]))
-    next_escape_bound = len(text)
-    while insert_at:
-        # Same logic as markdown.py
-        at, _, what = insert_at.pop()
-        while within_surrogate(text, at):
-            at += 1
+    def _unparse_entities(
+        self,
+        text: bytes,
+        entities: list,
+        offset: Optional[int] = None,
+        length: Optional[int] = None,
+    ) -> Generator[str, None, None]:
+        if offset is None:
+            offset = 0
+        length = length or len(text)
 
-        text = text[:at] + what + escape(text[at:next_escape_bound]) + text[next_escape_bound:]
-        next_escape_bound = at
+        for index, entity in enumerate(entities):
+            if entity.offset * 2 < offset:
+                continue
+            if entity.offset * 2 > offset:
+                yield self.quote(
+                    self._remove_surrogates(text[offset : entity.offset * 2])
+                )
+            start = entity.offset * 2
+            offset = entity.offset * 2 + entity.length * 2
 
-    text = escape(text[:next_escape_bound]) + text[next_escape_bound:]
+            sub_entities = list(
+                filter(lambda e: e.offset * 2 < (offset or 0), entities[index + 1 :])
+            )
+            yield self.apply_entity(
+                entity,
+                "".join(
+                    self._unparse_entities(
+                        text, sub_entities, offset=start, length=offset
+                    )
+                ),
+            )
 
-    return del_surrogate(text)
+        if offset < length:
+            yield self.quote(self._remove_surrogates(text[offset:length]))
+
+    @staticmethod
+    def _add_surrogates(text: str):
+        return text.encode("utf-16-le")
+
+    @staticmethod
+    def _remove_surrogates(text: bytes):
+        return text.decode("utf-16-le")
+
+    @abstractmethod
+    def link(self, value: str, link: str) -> str:  # pragma: no cover
+        pass
+
+    @abstractmethod
+    def bold(self, value: str) -> str:  # pragma: no cover
+        pass
+
+    @abstractmethod
+    def italic(self, value: str) -> str:  # pragma: no cover
+        pass
+
+    @abstractmethod
+    def spoiler(self, value: str) -> str:  # pragma: no cover
+        pass
+
+    @abstractmethod
+    def code(self, value: str) -> str:  # pragma: no cover
+        pass
+
+    @abstractmethod
+    def pre(self, value: str) -> str:  # pragma: no cover
+        pass
+
+    @abstractmethod
+    def pre_language(self, value: str, language: str) -> str:  # pragma: no cover
+        pass
+
+    @abstractmethod
+    def underline(self, value: str) -> str:  # pragma: no cover
+        pass
+
+    @abstractmethod
+    def strikethrough(self, value: str) -> str:  # pragma: no cover
+        pass
+
+    @abstractmethod
+    def quote(self, value: str) -> str:  # pragma: no cover
+        pass
+
+    @abstractmethod
+    def custom_emoji(self, value: str, document_id: str) -> str:  # pragma: no cover
+        pass
+
+
+class HtmlDecoration(TextDecoration):
+    def link(self, value: str, link: str) -> str:
+        return f'<a href="{link}">{value}</a>'
+
+    def bold(self, value: str) -> str:
+        return f"<b>{value}</b>"
+
+    def italic(self, value: str) -> str:
+        return f"<i>{value}</i>"
+
+    def spoiler(self, value: str) -> str:
+        return f"<tg-spoiler>{value}</tg-spoiler>"
+
+    def code(self, value: str) -> str:
+        return f"<code>{value}</code>"
+
+    def pre(self, value: str) -> str:
+        return f"<pre>{value}</pre>"
+
+    def pre_language(self, value: str, language: str) -> str:
+        return f'<pre><code class="language-{language}">{value}</code></pre>'
+
+    def underline(self, value: str) -> str:
+        return f"<u>{value}</u>"
+
+    def strikethrough(self, value: str) -> str:
+        return f"<s>{value}</s>"
+
+    def quote(self, value: str) -> str:
+        return escape(value, quote=False)
+
+    def blockquote(self, value: str) -> str:
+        return f"<blockquote>{value}</blockquote>"
+
+    def custom_emoji(self, value: str, document_id: str) -> str:
+        return f"<emoji document_id={document_id}>{value}</emoji>"
+
+
+html_decoration = HtmlDecoration()
+unparse = html_decoration.unparse
