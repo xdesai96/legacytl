@@ -1,6 +1,7 @@
 """
 Simple HTML -> Telegram entity parser.
 """
+
 import re
 import struct
 from collections import deque
@@ -11,30 +12,41 @@ from abc import ABC, abstractmethod
 
 from .. import helpers
 from ..tl.types import (
-    MessageEntityBold, MessageEntityItalic, MessageEntityCode,
-    MessageEntityPre, MessageEntityEmail, MessageEntityUrl,
-    MessageEntityTextUrl, MessageEntityMentionName,
-    MessageEntityUnderline, MessageEntityStrike, MessageEntityBlockquote,
-    TypeMessageEntity, MessageEntityCustomEmoji, MessageEntitySpoiler
+    MessageEntityBold,
+    MessageEntityItalic,
+    MessageEntityCode,
+    MessageEntityPre,
+    MessageEntityEmail,
+    MessageEntityUrl,
+    MessageEntityTextUrl,
+    MessageEntityMentionName,
+    MessageEntityUnderline,
+    MessageEntityStrike,
+    MessageEntityBlockquote,
+    TypeMessageEntity,
+    MessageEntityCustomEmoji,
+    MessageEntitySpoiler,
 )
 
 
 # Helpers from markdown.py
 def _add_surrogate(text):
-    return ''.join(
-        ''.join(chr(y) for y in struct.unpack('<HH', x.encode('utf-16le')))
-        if (0x10000 <= ord(x) <= 0x10FFFF) else x for x in text
+    return "".join(
+        "".join(chr(y) for y in struct.unpack("<HH", x.encode("utf-16le")))
+        if (0x10000 <= ord(x) <= 0x10FFFF)
+        else x
+        for x in text
     )
 
 
 def _del_surrogate(text):
-    return text.encode('utf-16', 'surrogatepass').decode('utf-16')
+    return text.encode("utf-16", "surrogatepass").decode("utf-16")
 
 
 class HTMLToTelegramParser(HTMLParser):
     def __init__(self):
         super().__init__()
-        self.text = ''
+        self.text = ""
         self.entities = []
         self._building_entities = {}
         self._open_tags = deque()
@@ -53,13 +65,14 @@ class HTMLToTelegramParser(HTMLParser):
             EntityType = MessageEntityItalic
         elif tag in ["tg-spoiler"]:
             EntityType = MessageEntitySpoiler
-        elif tag == 'u':
+        elif tag == "u":
             EntityType = MessageEntityUnderline
         elif tag in ["del", "s"]:
             EntityType = MessageEntityStrike
-        elif tag == 'blockquote':
+        elif tag == "blockquote":
             EntityType = MessageEntityBlockquote
-        elif tag == 'code':
+            args["collapsed"] = "expandable" in attrs
+        elif tag == "code":
             try:
                 # If we're in the middle of a <pre> tag, this <code> tag is
                 # probably intended for syntax highlighting.
@@ -67,30 +80,30 @@ class HTMLToTelegramParser(HTMLParser):
                 # Syntax highlighting is set with
                 #     <code class='language-...'>codeblock</code>
                 # inside <pre> tags
-                pre = self._building_entities['pre']
+                pre = self._building_entities["pre"]
                 try:
-                    pre.language = attrs['class'][len('language-'):]
+                    pre.language = attrs["class"][len("language-") :]
                 except KeyError:
                     pass
             except KeyError:
                 EntityType = MessageEntityCode
-        elif tag == 'pre':
+        elif tag == "pre":
             EntityType = MessageEntityPre
-            args["language"] = ''
-        elif tag == 'a':
+            args["language"] = ""
+        elif tag == "a":
             try:
-                url = attrs['href']
+                url = attrs["href"]
             except KeyError:
                 return
-            if url.startswith('mailto:'):
-                url = url[len('mailto:'):]
+            if url.startswith("mailto:"):
+                url = url[len("mailto:") :]
                 EntityType = MessageEntityEmail
             else:
                 if self.get_starttag_text() == url:
                     EntityType = MessageEntityUrl
                 else:
                     EntityType = MessageEntityTextUrl
-                    args['url'] = _del_surrogate(url)
+                    args["url"] = _del_surrogate(url)
                     url = None
             self._open_tags_meta.popleft()
             self._open_tags_meta.appendleft(url)
@@ -103,11 +116,12 @@ class HTMLToTelegramParser(HTMLParser):
                 offset=len(self.text),
                 # The length will be determined when closing the tag.
                 length=0,
-                **args)
+                **args,
+            )
 
     def handle_data(self, text):
-        previous_tag = self._open_tags[0] if len(self._open_tags) > 0 else ''
-        if previous_tag == 'a':
+        previous_tag = self._open_tags[0] if len(self._open_tags) > 0 else ""
+        if previous_tag == "a":
             url = self._open_tags_meta[0]
             if url:
                 text = url
