@@ -32,9 +32,11 @@ from ..tl.types import (
 # Helpers from markdown.py
 def _add_surrogate(text):
     return "".join(
-        "".join(chr(y) for y in struct.unpack("<HH", x.encode("utf-16le")))
-        if (0x10000 <= ord(x) <= 0x10FFFF)
-        else x
+        (
+            "".join(chr(y) for y in struct.unpack("<HH", x.encode("utf-16le")))
+            if (0x10000 <= ord(x) <= 0x10FFFF)
+            else x
+        )
         for x in text
     )
 
@@ -74,12 +76,6 @@ class HTMLToTelegramParser(HTMLParser):
             args["collapsed"] = "expandable" in attrs
         elif tag == "code":
             try:
-                # If we're in the middle of a <pre> tag, this <code> tag is
-                # probably intended for syntax highlighting.
-                #
-                # Syntax highlighting is set with
-                #     <code class='language-...'>codeblock</code>
-                # inside <pre> tags
                 pre = self._building_entities["pre"]
                 try:
                     pre.language = attrs["class"][len("language-") :]
@@ -179,13 +175,22 @@ class TextDecoration(ABC):
             MessageEntityCode: "code",
             MessageEntityUnderline: "underline",
             MessageEntityStrike: "strikethrough",
-            MessageEntityBlockquote: "blockquote",
         }
         if type(entity) in entity_map:
             if re.match(r"^<emoji document_id=\"?\d+?\"?>[^<]*?<\/emoji>$", text):
                 return text
 
-            return cast(str, getattr(self, entity_map[type(entity)])(value=text))
+            return cast(
+                str,
+                getattr(self, entity_map[type(entity)])(
+                    value=text,
+                ),
+            )
+        if type(entity) == MessageEntityBlockquote:
+            if hasattr(entity, "collapsed") and getattr(entity, "collapsed"):
+                return f"<blockquote expandable>{text}</blockquote>"
+            else:
+                return f"<blockquote>{text}</blockquote>"
         if type(entity) == MessageEntityPre:
             return (
                 self.pre_language(value=text, language=entity.language)
@@ -339,8 +344,8 @@ class HtmlDecoration(TextDecoration):
     def quote(self, value: str) -> str:
         return escape(value, quote=False)
 
-    def blockquote(self, value: str) -> str:
-        return f"<blockquote>{value}</blockquote>"
+    def blockquote(self, value: str, collapsed: str) -> str:
+        return f"<blockquote{collapsed}>{value}</blockquote>"
 
     def custom_emoji(self, value: str, document_id: str) -> str:
         return f"<emoji document_id={document_id}>{value}</emoji>"
