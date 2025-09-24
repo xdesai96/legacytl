@@ -233,7 +233,9 @@ def main(argv):
             long_description = f.read()
 
         with open("legacytl/version.py", "r", encoding="utf-8") as f:
-            version = "1.7.1"
+            version = re.search(r'__version__ = "([^"]+)"', f.read()).group(1)
+        if not version:
+            from legacytl import __version__ as version
         setup(
             name="Legacy-TL-New",
             version=version,
