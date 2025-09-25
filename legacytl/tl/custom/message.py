@@ -96,7 +96,7 @@ class Message(ChatGetter, SenderGetter, TLObject):
             The ID of the bot used to send this message
             through its inline mode (e.g. "via @like").
 
-        reply_to (:tl:`MessageReplyHeader`):
+        reply_to (:tl:`MessageReplyHeader` | :tl:`MessageReplyStoryHeader`):
             The original reply header if this message is replying to another.
 
         date (`datetime`):
@@ -192,6 +192,8 @@ class Message(ChatGetter, SenderGetter, TLObject):
         invert_media: Optional[bool] = None,
         offline: Optional[bool] = None,
         video_processing_pending: Optional[bool] = None,
+        paid_suggested_post_stars: Optional[bool] = None,
+        paid_suggested_post_ton: Optional[bool] = None,
         from_id: Optional[types.TypePeer] = None,
         from_boosts_applied: Optional[int] = None,
         saved_peer_id: Optional[types.TypePeer] = None,
@@ -216,6 +218,7 @@ class Message(ChatGetter, SenderGetter, TLObject):
         factcheck: Optional[types.TypeFactCheck] = None,
         report_delivery_until_date: Optional[datetime] = None,
         paid_message_stars: Optional[int] = None,
+        suggested_post: Optional[types.TypeSuggestedPost] = None,
         # Copied from MessageService.__init__ signature
         action: Optional[types.TypeMessageAction] = None,
         reactions_are_possible: Optional[bool] = None,
@@ -238,6 +241,8 @@ class Message(ChatGetter, SenderGetter, TLObject):
         self.invert_media = invert_media
         self.offline = offline
         self.video_processing_pending = video_processing_pending
+        self.paid_suggested_post_stars = paid_suggested_post_stars
+        self.paid_suggested_post_ton = paid_suggested_post_ton
         self.from_id = from_id
         self.from_boosts_applied = from_boosts_applied
         self.saved_peer_id = saved_peer_id
@@ -262,6 +267,7 @@ class Message(ChatGetter, SenderGetter, TLObject):
         self.factcheck = factcheck
         self.report_delivery_until_date = report_delivery_until_date
         self.paid_message_stars = paid_message_stars
+        self.suggested_post = suggested_post
         # Copied from MessageService.__init__ body
         self.action = action
         self.reactions_are_possible = reactions_are_possible
@@ -429,10 +435,11 @@ class Message(ChatGetter, SenderGetter, TLObject):
     @property
     def is_reply(self):
         """
-        `True` if the message is a reply to some other message.
+        `True` if the message is a reply to some other message or story.
 
-        Remember that you can access the ID of the message
-        this one is replying to through `reply_to.reply_to_msg_id`,
+        Remember that if the replied-to is a message,
+        you can access the ID of the message this one is
+        replying to through `reply_to.reply_to_msg_id`,
         and the `Message` object with `get_reply_message()`.
         """
         return self.reply_to is not None
@@ -727,7 +734,11 @@ class Message(ChatGetter, SenderGetter, TLObject):
         Returns the message ID this message is replying to, if any.
         This is equivalent to accessing ``.reply_to.reply_to_msg_id``.
         """
-        return self.reply_to.reply_to_msg_id if self.reply_to else None
+        return (
+            self.reply_to.reply_to_msg_id
+            if isinstance(self.reply_to, types.MessageReplyHeader)
+            else None
+        )
 
     @property
     def to_id(self):
@@ -793,7 +804,7 @@ class Message(ChatGetter, SenderGetter, TLObject):
         The result will be cached after its first use.
         """
         if self._reply_message is None and self._client:
-            if not self.reply_to:
+            if not isinstance(self.reply_to, types.MessageReplyHeader):
                 return None
 
             # Bots cannot access other bots' messages by their ID.
@@ -935,7 +946,8 @@ class Message(ChatGetter, SenderGetter, TLObject):
         data=None,
         share_phone=None,
         share_geo=None,
-        password=None
+        password=None,
+        open_url=None
     ):
         """
         Calls :tl:`SendVote` with the specified poll option
@@ -1021,6 +1033,12 @@ class Message(ChatGetter, SenderGetter, TLObject):
                 you need to provide your account's password. Otherwise,
                 `teltehon.errors.PasswordHashInvalidError` is raised.
 
+            open_url (`bool`):
+                When clicking on an inline keyboard URL button :tl:`KeyboardButtonUrl`
+                By default it will return URL of the button, passing ``click(open_url=True)``
+                will lunch the default browser with given URL of the button and
+                return `True` on success.
+
             Example:
 
                 .. code-block:: python
@@ -1050,7 +1068,10 @@ class Message(ChatGetter, SenderGetter, TLObject):
 
             but = types.KeyboardButtonCallback("", data)
             return await MessageButton(self._client, but, chat, None, self.id).click(
-                share_phone=share_phone, share_geo=share_geo, password=password
+                share_phone=share_phone,
+                share_geo=share_geo,
+                password=password,
+                open_url=open_url,
             )
 
         if sum(int(x is not None) for x in (i, text, filter)) >= 2:
@@ -1123,7 +1144,10 @@ class Message(ChatGetter, SenderGetter, TLObject):
         button = find_button()
         if button:
             return await button.click(
-                share_phone=share_phone, share_geo=share_geo, password=password
+                share_phone=share_phone,
+                share_geo=share_geo,
+                password=password,
+                open_url=open_url,
             )
 
     async def mark_read(self):

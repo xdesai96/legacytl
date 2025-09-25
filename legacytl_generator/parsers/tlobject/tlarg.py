@@ -42,6 +42,7 @@ KNOWN_NAMED_EXAMPLES = {
 
 KNOWN_TYPED_EXAMPLES = {
     'int128': "int.from_bytes(os.urandom(16), 'big')",
+    'int256': "int.from_bytes(os.urandom(32), 'big')",
     'bytes': "b'arbitrary\\x7f data \\xfa here'",
     'long': "-12398745604826",
     'string': "'some string here'",

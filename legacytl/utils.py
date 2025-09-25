@@ -14,6 +14,7 @@ import os
 import pathlib
 import re
 import struct
+import warnings
 from collections import namedtuple
 from mimetypes import guess_extension
 from types import GeneratorType
@@ -95,7 +96,8 @@ def get_display_name(entity):
         else:
             return ''
 
-    elif isinstance(entity, (types.Chat, types.ChatForbidden, types.Channel)):
+    elif isinstance(entity, (
+            types.Chat, types.ChatForbidden, types.Channel, types.ChannelForbidden)):
         return entity.title
 
     return ''
@@ -458,6 +460,7 @@ def get_input_media(
     if isinstance(media, types.MessageMediaDocument):
         return types.InputMediaDocument(
             id=get_input_document(media.document),
+            spoiler=media.spoiler,
             ttl_seconds=ttl or media.ttl_seconds
         )
 
@@ -1092,6 +1095,8 @@ def _rle_encode(string):
                 count = 0
 
             new += bytes([cur])
+    if count != 0:
+        new += b'\0' + bytes([count])
     return new
 
 
@@ -1556,3 +1561,11 @@ def _photo_size_byte_count(size):
         return max(size.sizes)
     else:
         return None
+
+
+async def maybe_async(coro):
+    result = coro
+    if inspect.isawaitable(result):
+        warnings.warn('Using async sessions support is an experimental feature')
+        result = await result
+    return result
