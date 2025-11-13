@@ -1,12 +1,13 @@
-from typing import Optional, List, TYPE_CHECKING
 from datetime import datetime
+from typing import TYPE_CHECKING, List, Optional
+
+from ... import errors, utils
+from .. import TLObject, alltlobjects, functions, types
 from .chatgetter import ChatGetter
-from .sendergetter import SenderGetter
-from .messagebutton import MessageButton
-from .forward import Forward
 from .file import File
-from .. import TLObject, types, functions, alltlobjects
-from ... import utils, errors
+from .forward import Forward
+from .messagebutton import MessageButton
+from .sendergetter import SenderGetter
 
 
 # TODO Figure out a way to have the code generator error on missing fields
@@ -753,6 +754,21 @@ class Message(ChatGetter, SenderGetter, TLObject):
 
         return self.peer_id
 
+    @property
+    async def link(self):
+        if self._client:
+            chat = await self.get_input_chat()
+            if isinstance(chat, types.InputPeerChannel):
+                return (
+                    await self._client(
+                        functions.channels.ExportMessageLinkRequest(channel, self.id)
+                    )
+                ).link
+            elif isinstance(chat, types.InputPeerUser):
+                return f"tg://openmessage?user_id={self.chat_id}&message_id={self.id}"
+            elif isinstance(chat, types.InputPeerChat):
+                return f"tg://openmessage?chat_id={self.chat_id}&message_id={self.id}"
+
     # endregion Public Properties
 
     # region Public Methods
@@ -947,7 +963,7 @@ class Message(ChatGetter, SenderGetter, TLObject):
         share_phone=None,
         share_geo=None,
         password=None,
-        open_url=None
+        open_url=None,
     ):
         """
         Calls :tl:`SendVote` with the specified poll option
@@ -1188,6 +1204,44 @@ class Message(ChatGetter, SenderGetter, TLObject):
         if self._client:
             return await self._client.unpin_message(
                 await self.get_input_chat(), self.id
+            )
+
+    async def translate(self, to_lang: str):
+        """
+        Translates the message using Google Translate.
+        Args:
+            to_lang (`str`):
+                The language to translate to. Must be a valid language code
+                (e.g. ``en``, ``es``, ``fr``, etc).
+        Returns:
+            `str`: The translated text.
+        Example:
+                # Translate the message to Spanish
+                translated = await message.translate('es')
+        """
+        if not self._client:
+            return
+
+        return await self._client.translate(self.peer_id, self, to_lang)
+
+    async def react(
+        self,
+        reaction: "typing.Optional[hints.Reaction]" = None,  # type: ignore
+        big: bool = False,
+        add_to_recent: bool = False,
+    ):
+        """
+        Reacts on the given message. Shorthand for
+        `telethon.client.messages.MessageMethods.send_reaction`
+        with both ``entity`` and ``message`` already set.
+        """
+        if self._client:
+            return await self._client.send_reaction(
+                await self.get_input_chat(),
+                self.id,
+                reaction,
+                big=big,
+                add_to_recent=add_to_recent,
             )
 
     # endregion Public Methods
