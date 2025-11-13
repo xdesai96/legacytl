@@ -320,24 +320,6 @@ class TelegramBaseClient(abc.ABC):
         self.api_id = int(api_id)
         self.api_hash = api_hash
 
-        # Current proxy implementation requires `sock_connect`, and some
-        # event loops lack this method. If the current loop is missing it,
-        # bail out early and suggest an alternative.
-        #
-        # TODO A better fix is obviously avoiding the use of `sock_connect`
-        #
-        # See https://github.com/LonamiWebs/Telethon/issues/1337 for details.
-        if not callable(getattr(self.loop, 'sock_connect', None)):
-            raise TypeError(
-                'Event loop of type {} lacks `sock_connect`, which is needed to use proxies.\n\n'
-                'Change the event loop in use to use proxies:\n'
-                '# https://github.com/LonamiWebs/Telethon/issues/1337\n'
-                'import asyncio\n'
-                'asyncio.set_event_loop(asyncio.SelectorEventLoop())'.format(
-                    self.loop.__class__.__name__
-                )
-            )
-
         if local_addr is not None:
             if use_ipv6 is False and ':' in local_addr:
                 raise TypeError(
@@ -536,6 +518,24 @@ class TelegramBaseClient(abc.ABC):
             self._loop = helpers.get_running_loop()
         elif self._loop != helpers.get_running_loop():
             raise RuntimeError('The asyncio event loop must not change after connection (see the FAQ for details)')
+
+        # Current proxy implementation requires `sock_connect`, and some
+        # event loops lack this method. If the current loop is missing it,
+        # bail out early and suggest an alternative.
+        #
+        # TODO A better fix is obviously avoiding the use of `sock_connect`
+        #
+        # See https://github.com/LonamiWebs/Telethon/issues/1337 for details.
+        if not callable(getattr(self._loop, 'sock_connect', None)):
+            raise TypeError(
+                'Event loop of type {} lacks `sock_connect`, which is needed to use proxies.\n\n'
+                'Change the event loop in use to use proxies:\n'
+                '# https://github.com/LonamiWebs/Telethon/issues/1337\n'
+                'import asyncio\n'
+                'asyncio.set_event_loop(asyncio.SelectorEventLoop())'.format(
+                    self._loop.__class__.__name__
+                )
+            )
 
         # ':' in session.server_address is True if it's an IPv6 address
         if (not self.session.server_address or

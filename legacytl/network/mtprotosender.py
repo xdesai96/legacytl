@@ -70,8 +70,7 @@ class MTProtoSender:
         # pending futures should be cancelled.
         self._user_connected = False
         self._reconnecting = False
-        self._disconnected = helpers.get_running_loop().create_future()
-        self._disconnected.set_result(None)
+        self.__disconnected = None
 
         # We need to join the loops upon disconnection
         self._send_loop_handle = None
@@ -217,6 +216,13 @@ class MTProtoSender:
         """
         return asyncio.shield(self._disconnected)
 
+    @property
+    def _disconnected(self):
+        if self.__disconnected is None:
+            self.__disconnected = helpers.get_running_loop().create_future()
+            self.__disconnected.set_result(None)
+        return self.__disconnected
+
     # Private methods
 
     async def _connect(self):
@@ -274,7 +280,7 @@ class MTProtoSender:
         # or errors after which the sender cannot continue such
         # as failing to reconnect or any unexpected error.
         if self._disconnected.done():
-            self._disconnected = loop.create_future()
+            self.__disconnected = loop.create_future()
 
         self._log.info('Connection to %s complete!', self._connection)
 
