@@ -3,7 +3,7 @@ import itertools
 import typing
 import warnings
 
-from .. import errors, helpers, hints, utils
+from .. import errors, extensions, helpers, hints, utils
 from ..requestiter import RequestIter
 from ..tl import functions, types
 
